@@ -1,0 +1,169 @@
+---
+title: "Supplemental"
+author: "Daniel Monaco"
+date: "3/22/2019"
+output: html_document
+---
+
+---
+title: "Rvarda Supplement"
+author: "Daniel Monaco"
+date: "12/13/2018"
+output: html_document
+---
+
+We start AVARDA analaysis with three data files
+* A peptide - peptide blast alignment matrix that describes crossreactivity between related peptides: the dictionary
+* A peptide - virus blast alignment matrix that describes crossreactivity between related viruses: the alignment matrix
+* A patient - peptide enrichment matrix describing the relative enrichments for each peptide in the PhIP-Seq VirScan library: the z-score file (subject to change)
+
+Of these files only z-score file changes between AVARDA runs: the other two files undergo some initial changes detailed below
+
+Caption for the picture.](/path/to/image.png)
+
+```{r Initial Subsetting, echo=FALSE}
+setwd("~/Desktop/PythonAvarda/AVARDA3-master/ref_seq/")
+#probs_full = fread("VirScan_blast.txt") #read in blast alignment file
+probs = fread("/Users/danielmonaco1/Desktop/PythonAvarda/RVARDA_master/RVARDA_git/bin/VirScan_blast_full.txt") #read in blast alignment file
+probs_true = as.data.frame(probs[,c(2,23)]) #subset only virus names and ppos values
+unique_virus = unique(probs_true[,1]) #acquire list of unique virus names
+test = subset(probs_true,probs_true[,2]>=80)
+test1 = unique(test[,1])
+temp1 = c()
+temp2 = c()
+
+###### sum up number of strong peptide/virus alignments for each virus 
+for(R in 1:length(test1)){
+  temp1[R] = test1[R]
+  temp2[R] = sum(str_count(test[,1],test1[R])) 
+}
+Virus_length = as.data.frame(cbind(temp1,temp2))
+Viruses = Virus_length[which(as.numeric(as.character(Virus_length$temp2))>=10),] #remove viruses that have less than 10 strong alignments
+Viruses = Viruses[,1]
+######
+
+probs_new = probs[,c(1,2,23)]
+probs_true_filtered = subset(probs_new,unlist(probs_new[,2]) %in% Viruses) ### End of first round of filtering
+
+#####
+probs_true_filtered2 = cbind(unite(probs_true_filtered[,1:2],combo,sseqid,qseqid,sep = "_"),probs_true_filtered)
+probs_true_filtered2 = probs_true_filtered2[order(-probs_true_filtered2[,4])]
+probs_true_filtered3 <- probs_true_filtered2[!duplicated(probs_true_filtered2[,1]),]
+probs_true_filtered3 = probs_true_filtered3[,2:4]
+
+fullmatrix = data.frame(spread(probs_true_filtered3,sseqid,combo_score,fill = 0),row.names = 1)
+# fullmatrix[1,] = NULL
+# row.names(fullmatrix)= fullmatrix[,1]
+# fullmatrix$V1 =  NULL
+binary = fullmatrix
+a = 1
+binary[binary < 80] = 0
+binary[binary >= 80] = 1
+
+subset_index = c()
+subset_index2 = c()
+for(R1 in 1:dim(binary)[2]){
+  for(R2 in 1:dim(binary)[2]){
+  shared = sum(binary[,R1]*binary[,R2])
+  L_R2 = sum(binary[R2])
+    if(R1 !=R2){
+      if(L_R2 < shared +2) {
+      subset_index[a] = R1
+      subset_index2[a] = R2
+      fullmatrix[R1] = pmax(fullmatrix[R1],fullmatrix[R2]) 
+      a = a+1
+      }
+    }
+  }
+}
+
+
+#####
+test = cbind(subset_index2,subset_index)
+fullmatrix2 = fullmatrix
+fullmatrix2[,unique(subset_index2)] = NULL
+g = graph_from_data_frame(d=test) 
+unique_virus_new = unique(colnames(fullmatrix2)) #acquire new list of unique virus names
+#subset matrix 2 is bad remove all element from it
+# max_peptides =  apply(fullmatrix2, 1, max)
+
+fullmatrix3 = fullmatrix2#[max_peptides>=80,]
+fullmatrix3 = cbind(rownames(fullmatrix3),fullmatrix3)
+fwrite(as.data.frame(fullmatrix3),"VirScan_filtered_virus_blast_new.csv")
+
+### To do later - determine which viruses are actually being merged to each other
+
+```
+
+The first thing we do is clean up of the alignment matrix. There are `length(unique_virus)` uniquRe virus species with alignments to our peptides in our library. However a non-insignificant fraction of these viruses have only a few weak alignments to VirScan peptides and a portion of listed viruses are only subsets of other more annotated viruese (e.g. all peptides that align to virus A also align to Virus B but Virus B has additional aligning peptides). Our first rounds of cleanup is removing viruses that have less than 10 strong alignments to any VirScan peptides from future analyses.
+*This first round of analysis removes `length(unique_virus) - length(Viruses)`
+
+Next we require that every kept virus has at least 3 unique peptides in pairwise comparisons with any other virus. If one virus lacks at least 3 unique peptides to another virus then they are merged and the maximal alignment score between the viruses for each peptide is kept.
+*This round of clean up removes and additional ` length(Viruses) - length(unique_virus_new)` viruses from analysis
+
+```{r Total Probability Calculation}
+#probs_true_subset = fread("VirScan_filtered_virus_blast.csv")
+fullmatrix3 = as.data.frame(fread("/Users/danielmonaco1/Desktop/PythonAvarda/RVARDA_master/RVARDA_git/bin/VirScan_filtered_virus_blast_new.csv")) # read the ]
+row.names(fullmatrix3)= fullmatrix3[,1]
+fullmatrix3[,1] =  NULL
+
+unique_peptides = row.names(fullmatrix3)
+unique_virus_new = unique(colnames(fullmatrix3))
+total_probs = data.frame(matrix(nrow = length(unique_virus_new),ncol = 2))
+for(R in 1:dim(total_probs)[1]){
+  probs_subset = fullmatrix3[,R]
+  probs_subset_ppos = subset(probs_subset,probs_subset >= 80) #get number of evidence alignments for a given virus
+  probs_subset_x = subset(probs_subset,probs_subset > 0) #get total number of alignments for a given virus
+  total_probs[R,1] = unique_virus_new[R]
+  total_probs[R,2] = length(probs_subset_ppos)/(length(unique_peptides)-(length(probs_subset_x)[1]-length(probs_subset_ppos))) #get virus/total probability pairs
+  }
+fwrite(total_probs,"/Users/danielmonaco1/Desktop/PythonAvarda/RVARDA_master/RVARDA_git/bin/total_probability_xr2.csv")
+```
+
+Our next step in the AVARDA pipeline is to determine a null probability for each virus having an aligning enriched peptide by chance. For each of the remaining `length(unique_virus_new)` viruses we determine the number of "evidence" and "cross-reactive" peptides. Evidence is defined as having an alignment with ppos >= 80 and xr alignments are those > 80 and > 1. To calculate this null probability we define p = e_i/N-xr_i, where e_i and xr_i are the number of total evidence peptides for a given virus and N is total number of possible peptides (unless future virus libraries are added that is `length(unique_peptides)`). This null probability is calculated for each virus and is a parameter in final binomial p-test we use to determine if a virus is eliciting a response.
+
+```{r Unique Probability Calculation}
+fullmatrix3 = data.frame(fread("/Users/danielmonaco1/Desktop/PythonAvarda/RVARDA_master/RVARDA_git/bin/VirScan_filtered_virus_blast_new.csv"),row.names = 1) # read the ]
+# row.names(fullmatrix3) = fullmatrix3[,1]
+# fullmatrix3$`rownames(fullmatrix3)` =  NULL
+binary = fullmatrix3
+a = 1
+binary2 = binary
+binary2[binary2<80] = 0
+binary2[binary2>=80] = 1
+binary[binary > 0] = 1
+unique_table = c()
+unique_table2 =c()
+unique_table3 = c()
+system.time({
+for(R1 in 1:dim(fullmatrix3)[2]){
+  for(R in 1:dim(fullmatrix3)[2]){
+  
+  shared_all = as.numeric(binary[,R1]) * as.numeric(binary[,R]) #get location of all shared peptides between Vi and Vj
+  shared_enriched = as.numeric(binary2[,R1]) * as.numeric(binary2[,R]) 
+  shared_sum = sum(shared_enriched) #Number of shared peptides to remove from N for null denominator calculation
+  
+  
+  
+  uniques = fullmatrix3[shared_enriched!=1,R1]  #Vector of all Vi assocated peptides not assocated with virus j
+  enriched_i = sum(uniques >= 80)
+  xr_i = sum((uniques > 0) & (uniques < 80))
+  N = dim(fullmatrix3)[1] - shared_sum - xr_i
+  prob_null = enriched_i/N
+  unique_table[[a]] = prob_null
+  unique_table2[[a]] = colnames(fullmatrix3[R1])
+  unique_table3[[a]] = colnames(fullmatrix3[R])
+  a = a+1
+  
+  
+}
+}
+}
+)
+
+temp = as.data.frame(cbind(unique_table,unique_table2,unique_table3))
+full_prob = as.data.frame(spread(temp,unique_table2,unique_table))
+fwrite((as.data.frame(full_prob)),"/Users/danielmonaco1/Desktop/PythonAvarda/RVARDA_master/RVARDA_git/bin/unique_probabilities2.csv")
+```
+
+Our final pre-computed step in the AVARDA pipeline is to determine a null probability for each virus having an aligning enriched peptide by chance. For each of the remaining `length(unique_virus_new)` viruses we determine the number of "evidence" and "cross-reactive" peptides. Evidence is defined as having an alignment with ppos >= 80 and xr alignments are those > 80 and > 1. To calculate this null probability we define p = e_i/N-xr_i, where e_i and xr_i are the number of total evidence peptides for a given virus and N is total number of possible peptides (unless future virus libraries are added that is `length(unique_peptides)`). This null probability is calculated for each virus and is a parameter in final binomial p-test we use to determine if a virus is eliciting a response.
