@@ -134,15 +134,15 @@ AVARDA = function(case_path,thresh,dict_path,total_path,pairwise_path,blast_path
               p_i_j =  binom_test(rownames(v_i),rownames(v_i_xr),rownames(v_j),N_rank,probability_i_j) #likelihood that virus_i has an infection that is unique relative to virus_j
               p_j_i =  binom_test(rownames(v_j),rownames(v_j_xr),rownames(v_i),N_rank,probability_j_i) #likelihood that virus_j has an infection that is unique relative to virus_i
               
-              if(p_i_j[1] <= .01 & p_j_i[1] >.01 & p_i_j[2] >=3 ){ #if virus_j loses (and virus_i has at least 3 aligning peptideds
+              if(p_i_j[1] <= .05 & p_j_i[1] >.05 & p_i_j[2] >=3 ){ #if virus_j loses (and virus_i has at least 3 aligning peptideds
                 fullmatrix_sorted_ij[(shared==1),R2] = 0 #virus_j loses all alignments that are shared with virus_i (even if they are xr in v_i and evidence in v_j)
                 
               }
-              if(p_i_j[1] > .01 & p_j_i[1] <=.01 & p_j_i[2] >=3 ){ #if virus_i loses
+              if(p_i_j[1] > .05 & p_j_i[1] <=.05 & p_j_i[2] >=3 ){ #if virus_i loses
                 fullmatrix_sorted_ij[(shared==1),R1] = 0
                 
               }
-              if(p_i_j[1] > .01 & p_j_i[1] > .01 & p_j_i[2] >=3 & p_i_j[2] >=3 ){ #if both viruses fail to have enough unique evidence (but both have three peptides)
+              if(p_i_j[1] > .05 & p_j_i[1] > .05 & p_j_i[2] >=3 & p_i_j[2] >=3 ){ #if both viruses fail to have enough unique evidence (but both have three peptides)
                 sim_tag[x1,] = cbind(virus_i,virus_j) #note that the pair is indistinguishable
                 #print(x1)
                 x1 = x1+1
@@ -200,7 +200,9 @@ AVARDA = function(case_path,thresh,dict_path,total_path,pairwise_path,blast_path
       
     }
     close(pb)
-    a123 = cbind(output,p.adjust(output[,2],"BH"))
+    index = which(output[,2]!=1)
+    a123 = cbind(output,1)
+    a123[index,11] = p.adjust(output[index,2],"BH")
     last = list(a123,sim_tag,fullmatrix_sorted_ij)
     return(last)
   }
@@ -208,9 +210,9 @@ AVARDA = function(case_path,thresh,dict_path,total_path,pairwise_path,blast_path
   
   
   simtag  = function(last){
-    results = as.data.frame(last[1])
-    results = cbind(results,0)
-    table = as.data.frame(last[2])
+    results = as.data.frame(last[1]) #take the virus of two 
+    results = cbind(results,0) # 
+    table = as.data.frame(last[2]) #
     names = subset(results[,1],results[,2]<.05)
     table = subset(table,table[,1] %in% names)
     table = subset(table,table[,2] %in% names)
@@ -236,7 +238,8 @@ AVARDA = function(case_path,thresh,dict_path,total_path,pairwise_path,blast_path
   plate = list()
   
   
-  foreach(R = 1:(dim(case)[2]-1)) %dopar%{ #cycle through each patient column by column (goal is so be serialized)
+ zeta = foreach(R = 1:(dim(case)[2]-1),.combine=rbind) %dopar%{ #cycle through each patient column by column (goal is so be serialized)
+    
     rank <- total_calc(case,R,enrich,total,blast) # run the subsetting step given input of the total null probs, sample column, enrichment threshold and hte Virus blast matrix.
     sorted_table=pairwise_calc(total,pairwise, rank) # take subset matrix from above and do all reassignments with pairwise and total null probabilities
     sorted_table_2 = simtag(sorted_table) # add indistinguishable tags
@@ -246,22 +249,10 @@ AVARDA = function(case_path,thresh,dict_path,total_path,pairwise_path,blast_path
     colnames(output) = c("Virus","P-value","Evidence Peptides","XR peptides","N-rank #","Evidence Peptide #","XR Peptide #","Filtered Evidence #","Filtered N-rank #","Null Probability","BH P-value","Indistinguishablity Groups")
     fwrite(output,file = paste0(out_path,name,".csv"))
     pool = cbind(name,output)
-    plate[[R]] = pool[pool[,8]>=3 & pool[,11]<=.05,]
+    return(pool[pool[,8]>=3 & pool[,11]<=.05,])
   }
-  final_out = bind_rows(plate)
-  fwrite(final_out,file = paste0(out_path,"full",".csv"))
+  fwrite(zeta,file = paste0(out_path,"full",".csv"))
 }
 
+AVARDA("./input/pairwise_LCL.txt",10,"./bin/my_df.csv","./bin/total_probability_xr2.csv","./bin/unique_probabilities3.csv","./bin/VirScan_filtered_virus_blast_new.csv","./results/")
 
-
-
-setwd("~/Desktop/PythonAvarda/RVARDA_master/RVARDA_git/")
-AVARDA("./input/pairwise_LCL.txt",10,"./bin/df_new.csv","./bin/total_probability_xr2.csv","./bin/unique_probabilities2.csv","./bin/VirScan_filtered_virus_blast_new.csv","./results/")
-
-
-dict =  data.frame(fread("./bin/df_new.csv",data.table = FALSE)) # read in peptide-peptide dictionary
-total = data.frame(fread("./bin/total_probability_xr2.csv",data.table = FALSE)) #read in null probability table
-pairwise = data.frame(fread("./bin/unique_probabilities2.csv",data.table = FALSE),row.names=1) #read in null probability table
-blast = data.frame(fread("./bin/VirScan_filtered_virus_blast_new.csv",data.table = FALSE),row.names=1) #read in virus-peptide alignment filtered table
-case = data.frame(fread("./input/pairwise_LCL.txt", data.table = FALSE)) # this is the case of interest to be analyzed - changeable
-out_path = c("./results/")

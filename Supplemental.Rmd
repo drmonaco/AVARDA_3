@@ -128,9 +128,9 @@ fullmatrix3 = data.frame(fread("/Users/danielmonaco1/Desktop/PythonAvarda/RVARDA
 # fullmatrix3$`rownames(fullmatrix3)` =  NULL
 binary = fullmatrix3
 a = 1
-binary2 = binary
-binary2[binary2<80] = 0
-binary2[binary2>=80] = 1
+# binary2 = binary
+# binary2[binary2<80] = 0
+# binary2[binary2>=80] = 1
 binary[binary > 0] = 1
 unique_table = c()
 unique_table2 =c()
@@ -140,12 +140,12 @@ for(R1 in 1:dim(fullmatrix3)[2]){
   for(R in 1:dim(fullmatrix3)[2]){
   
   shared_all = as.numeric(binary[,R1]) * as.numeric(binary[,R]) #get location of all shared peptides between Vi and Vj
-  shared_enriched = as.numeric(binary2[,R1]) * as.numeric(binary2[,R]) 
-  shared_sum = sum(shared_enriched) #Number of shared peptides to remove from N for null denominator calculation
+  # shared_enriched = as.numeric(binary2[,R1]) * as.numeric(binary2[,R]) 
+  shared_sum = sum(shared_all) #Number of shared peptides to remove from N for null denominator calculation
   
   
   
-  uniques = fullmatrix3[shared_enriched!=1,R1]  #Vector of all Vi assocated peptides not assocated with virus j
+  uniques = fullmatrix3[shared_all!=1,R1]  #Vector of all Vi assocated peptides not assocated with virus j
   enriched_i = sum(uniques >= 80)
   xr_i = sum((uniques > 0) & (uniques < 80))
   N = dim(fullmatrix3)[1] - shared_sum - xr_i
@@ -162,8 +162,10 @@ for(R1 in 1:dim(fullmatrix3)[2]){
 )
 
 temp = as.data.frame(cbind(unique_table,unique_table2,unique_table3))
-full_prob = as.data.frame(spread(temp,unique_table2,unique_table))
-fwrite((as.data.frame(full_prob)),"/Users/danielmonaco1/Desktop/PythonAvarda/RVARDA_master/RVARDA_git/bin/unique_probabilities2.csv")
+temp2 = unique( temp[ , 1:3 ] )
+full_prob = as.data.frame(spread(temp2,unique_table2,unique_table,drop = FALSE))
+
+fwrite((as.data.frame(full_prob)),"/Users/danielmonaco1/Desktop/PythonAvarda/RVARDA_master/RVARDA_git/bin/unique_probabilities3.csv")
 ```
 
 Our final pre-computed step in the AVARDA pipeline is to determine a null probability for each virus having an aligning enriched peptide by chance. For each of the remaining `length(unique_virus_new)` viruses we determine the number of "evidence" and "cross-reactive" peptides. Evidence is defined as having an alignment with ppos >= 80 and xr alignments are those > 80 and > 1. To calculate this null probability we define p = e_i/N-xr_i, where e_i and xr_i are the number of total evidence peptides for a given virus and N is total number of possible peptides (unless future virus libraries are added that is `length(unique_peptides)`). This null probability is calculated for each virus and is a parameter in final binomial p-test we use to determine if a virus is eliciting a response.
